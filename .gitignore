@@ -1,0 +1,7 @@
+node_modules/
+
+# Secrets and real data never belong in this repo.
+.env
+.env.*
+!.env.example
+*.authix

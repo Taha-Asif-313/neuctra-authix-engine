@@ -1,0 +1,148 @@
+// Neuctra Authix Engine schema for MySQL.
+// prisma/postgresql/schema.prisma is the same model for PostgreSQL: change both together.
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ApiKeyKind {
+  secret
+  publishable
+}
+
+/// The person running this engine. Created by `npm run setup`.
+model AdminUser {
+  id         String   @id @default(uuid())
+  name       String
+  email      String   @unique
+  isVerified Boolean  @default(true)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  apps    App[]
+  users   User[]
+  apiKeys ApiKey[]
+}
+
+/// The plaintext key is shown once and never stored: only its SHA-256 hash.
+model ApiKey {
+  id         String     @id @default(cuid())
+  adminId    String
+  admin      AdminUser  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  /// null = valid for every app on this engine.
+  appId      String?
+  kind       ApiKeyKind @default(secret)
+  prefix     String     @unique
+  hash       String
+  lastFour   String
+  label      String?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([adminId])
+}
+
+model App {
+  id                  String   @id @default(cuid())
+  applicationName     String
+  category            String
+  description         String   @db.Text
+  platform            String
+  isActive            Boolean  @default(true)
+  userDataStorageUsed Int      @default(0)
+  appDataStorageUsed  Int      @default(0)
+  /// JSON arrays of strings. Empty or null = no restriction.
+  allowedOrigins      Json?
+  allowedIps          Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  adminId String
+  admin   AdminUser @relation(fields: [adminId], references: [id])
+
+  users        User[]
+  appDataItems AppDataItem[]
+}
+
+model AppDataItem {
+  id           String   @id @default(cuid())
+  appId        String
+  app          App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  adminId      String
+  dataCategory String
+  payload      Json
+  searchText   String   @db.Text
+  sizeBytes    Int
+  version      Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([appId, dataCategory, createdAt])
+  @@index([appId, createdAt, id])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String?
+  name         String
+  email        String
+  password     String
+  isVerified   Boolean   @default(false)
+  otp          String?
+  otpExpiry    DateTime?
+  otpAttempts  Int       @default(0)
+  tokenVersion Int       @default(0)
+  phone        String?
+  address      String?   @db.Text
+  avatarUrl    String?   @db.Text
+  isActive     Boolean   @default(true)
+  role         String    @default("user")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  appId   String
+  app     App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+  adminId String
+  admin   AdminUser @relation(fields: [adminId], references: [id])
+
+  settings      Json?
+  packageInfo   Json?
+  notifications Json?
+  extraInfo     Json?
+
+  dataItems UserDataItem[]
+
+  @@unique([email, appId])
+  @@index([appId, createdAt, id])
+}
+
+model UserDataItem {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appId        String
+  adminId      String
+  dataCategory String
+  payload      Json
+  searchText   String   @db.Text
+  sizeBytes    Int
+  version      Int      @default(0)
+
+  parentId String?
+  parent   UserDataItem?  @relation("ItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children UserDataItem[] @relation("ItemChildren")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([appId, dataCategory, createdAt])
+  @@index([userId, dataCategory, createdAt])
+  @@index([appId, createdAt, id])
+  @@index([parentId])
+}
